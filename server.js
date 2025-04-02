@@ -3,6 +3,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const admin = require("firebase-admin");
 
+// Serverinstellingen
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -10,13 +11,27 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Firebase config (base64-decoded from secret)
+// Firebase configureren via base64 JSON
+if (!process.env.FIREBASE_CONFIG_JSON) {
+  console.error("❌ Omgevingsvariabele FIREBASE_CONFIG_JSON ontbreekt.");
+  process.exit(1);
+}
+
 const serviceAccount = JSON.parse(
   Buffer.from(process.env.FIREBASE_CONFIG_JSON, "base64").toString("utf-8")
 );
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
+});
+
+// Optionele API-key beveiliging
+const API_KEY = process.env.API_KEY;
+app.use("/send", (req, res, next) => {
+  if (API_KEY && req.headers["x-api-key"] !== API_KEY) {
+    return res.status(401).json({ error: "Ongeldige API key." });
+  }
+  next();
 });
 
 // Statuspagina
@@ -30,7 +45,7 @@ app.post("/send", async (req, res) => {
 
   if (!title || !body || !tokens || !Array.isArray(tokens)) {
     return res.status(400).json({
-      error: "Verzoek moet title, body en tokens (array) bevatten."
+      error: "Verzoek moet 'title', 'body' en 'tokens' (array) bevatten."
     });
   }
 
@@ -41,14 +56,21 @@ app.post("/send", async (req, res) => {
 
   try {
     const response = await admin.messaging().sendMulticast(message);
-    res.json({ success: true, response });
+    console.log(`📤 Pushmelding verzonden naar ${tokens.length} tokens (${response.successCount} successen, ${response.failureCount} mislukt)`);
+
+    res.json({
+      success: true,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      responses: response.responses
+    });
   } catch (error) {
     console.error("❌ Fout bij verzenden pushmelding:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Start server
+// Server starten
 app.listen(PORT, () => {
-  console.log(`✅ Pushserver actief op poort ${PORT}`);
+  console.log(`✅ Pushserver draait op poort ${PORT}`);
 });
