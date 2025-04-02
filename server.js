@@ -10,19 +10,28 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Firebase config via secret
-const serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG_JSON);
+// Firebase config (base64-decoded from secret)
+const serviceAccount = JSON.parse(
+  Buffer.from(process.env.FIREBASE_CONFIG_JSON, "base64").toString("utf-8")
+);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-// POST /send → pushmelding versturen
+// Statuspagina
+app.get("/", (req, res) => {
+  res.send("🎯 Pushserver actief – gebruik POST /send om een melding te versturen.");
+});
+
+// Pushmelding versturen
 app.post("/send", async (req, res) => {
   const { title, body, tokens } = req.body;
 
   if (!title || !body || !tokens || !Array.isArray(tokens)) {
-    return res.status(400).json({ error: "Verzoek moet title, body en tokens bevatten." });
+    return res.status(400).json({
+      error: "Verzoek moet title, body en tokens (array) bevatten."
+    });
   }
 
   const message = {
@@ -34,17 +43,12 @@ app.post("/send", async (req, res) => {
     const response = await admin.messaging().sendMulticast(message);
     res.json({ success: true, response });
   } catch (error) {
-    console.error("Fout bij verzenden pushmelding:", error);
+    console.error("❌ Fout bij verzenden pushmelding:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// GET / → statuspagina
-app.get("/", (req, res) => {
-  res.send("🎯 Pushserver actief – gebruik POST /send om een melding te versturen.");
-});
-
 // Start server
 app.listen(PORT, () => {
-  console.log(`Pushserver actief op poort ${PORT}`);
+  console.log(`✅ Pushserver actief op poort ${PORT}`);
 });
